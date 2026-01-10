@@ -4,6 +4,16 @@ FROM node:20-slim AS builder
 # Set working directory
 WORKDIR /app
 
+# Accept build arguments for environment variables
+ARG VITE_BACKEND_API_BASE_URL
+ARG VITE_BACKEND_API_KEY
+ARG ENV=production
+
+# Set as environment variables for Vite build
+ENV VITE_BACKEND_API_BASE_URL=${VITE_BACKEND_API_BASE_URL}
+ENV VITE_BACKEND_API_KEY=${VITE_BACKEND_API_KEY}
+ENV ENV=${ENV}
+
 # Copy package files
 COPY package.json package-lock.json ./
 
