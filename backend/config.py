@@ -10,10 +10,17 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    # Environment
+    env: str = "development"  # development, production
+
     # Server configuration
     port: int = 3000
     frontend_url: str = "http://localhost:8080"
-    debug: bool = False
+
+    @property
+    def debug(self) -> bool:
+        """Debug mode is automatically set based on environment."""
+        return self.env == "development"
 
     # API authentication
     backend_api_key: Optional[str] = None
