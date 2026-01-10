@@ -94,11 +94,9 @@ class UsageTracker:
             (allowed, usage_info)
         """
         usage_info = await self.get_usage(ip_address)
-        client_id = self._get_client_id(ip_address)
         
-        usage_data = await self.storage.get_usage(client_id)
-        tokens_used = usage_data.get("tokens", 0) if usage_data else 0
-        
+        # Use tokens_used from usage_info
+        tokens_used = usage_info["tokens_used"]
         allowed = tokens_used < self.token_limit
         
         if not allowed:
