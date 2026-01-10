@@ -56,40 +56,6 @@ const VoiceChat = () => {
     },
   });
 
-  // Dummy data for preview - remove when done testing
-  const dummyMessages = messages.length === 0 ? [
-    {
-      id: "dummy-1",
-      role: "user" as const,
-      content: "Hello, can you help me think through a complex problem I've been wrestling with? I've been going back and forth on this for weeks and could really use a fresh perspective.",
-    },
-    {
-      id: "dummy-2",
-      role: "assistant" as const,
-      content: "Of course! I'd be happy to help you think through your problem. Complex decisions often benefit from breaking them down into smaller, more manageable pieces. What's the situation you're dealing with? Feel free to share as much detail as you'd like - the more context I have, the better I can help you think through it.",
-    },
-    {
-      id: "dummy-3",
-      role: "user" as const,
-      content: "I'm trying to decide whether to take a new job offer. The salary is significantly higher - about 30% more than what I'm making now - and it's at a more prestigious company with better growth opportunities. However, I'd have to relocate across the country, away from my family and friends. I've built a really strong support network here, and I'm worried about starting over in a new city where I don't know anyone.",
-    },
-    {
-      id: "dummy-4",
-      role: "assistant" as const,
-      content: "That's a significant decision with multiple important factors to consider. Let's break this down systematically. You've identified several key elements: financial benefits, career advancement, and personal relationships. Each of these carries different weight depending on your values and long-term goals. Have you considered what your priorities are for the next 5-10 years? Also, is the relocation permanent, or could you potentially negotiate remote work arrangements or periodic visits back home?",
-    },
-    {
-      id: "dummy-5",
-      role: "user" as const,
-      content: "That's a good point about remote work. I haven't really explored that option yet. The company did mention they have a flexible work policy, but I'm not sure if that extends to full remote work or just hybrid. I should probably ask about that. As for my priorities, I'm in my early 30s and I do want to advance my career, but I also value having a strong personal support system. It's hard to know which should take precedence.",
-    },
-    {
-      id: "dummy-6",
-      role: "assistant" as const,
-      content: "I see. So you're weighing financial benefits and career growth against personal relationships and support systems. This is a classic tension between professional advancement and personal fulfillment. One way to think about this is to consider whether this move would be reversible - if you took the job and found you really missed your support network, could you move back? Also, have you considered that you might be able to build new relationships in the new city while maintaining your existing ones through regular visits and technology? Sometimes we frame these as either/or decisions when there might be creative solutions that address both concerns.",
-    },
-  ] : messages;
-
   // Set up audio analysis to detect when user is speaking
   useEffect(() => {
     if (isConnected && mediaStream) {
@@ -125,7 +91,7 @@ const VoiceChat = () => {
         if (!analyser) return;
 
         analyser.getByteFrequencyData(dataArray);
-        
+
         // Calculate average volume
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -273,7 +239,7 @@ const VoiceChat = () => {
   // Determine status text below mic button
   const getStatusText = () => {
     if (isConnecting) return "Connecting...";
-    if (error) return "Could not connect - please try again";
+    if (error) return error;
     if (isConnected) return "Connected, tap to end";
     return "Tap to speak";
   };
@@ -288,58 +254,103 @@ const VoiceChat = () => {
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="relative flex items-center justify-between px-6 py-4 border-b border-border/50 flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleEndSession}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          End session
-        </Button>
+      <header className="relative flex flex-col gap-3 px-6 py-4 border-b border-border/50 flex-shrink-0 md:flex-row md:items-center md:justify-between">
+        {/* Top row: End session and Timer */}
+        <div className="flex items-center justify-between w-full">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleEndSession}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            End session
+          </Button>
 
-        <div className="absolute left-1/2 -translate-x-1/2">
+          <SessionTimer startTime={sessionStart} isPaused={!isConnected} />
+        </div>
+
+        {/* Bottom row: Mode badge (centered on mobile, hidden on larger screens) */}
+        <div className="flex justify-center w-full md:hidden">
           <Dialog open={switchModeOpen} onOpenChange={setSwitchModeOpen}>
             <DialogTrigger asChild>
               <button type="button" className="focus:outline-none">
-        <ModeBadge
-          icon={mode.icon}
-          title={mode.title}
-          accentClass={mode.accentClass}
-          borderClass={mode.borderClass}
+                <ModeBadge
+                  icon={mode.icon}
+                  title={mode.title}
+                  accentClass={mode.accentClass}
+                  borderClass={mode.borderClass}
                   clickable
                 />
               </button>
-          </DialogTrigger>
-          <DialogContent className="bg-card border-border">
-            <DialogHeader>
-              <DialogTitle>Switch thinking mode</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 gap-3 mt-4">
-              {modes.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleSwitchMode(m.id)}
-                  className={cn(
-                    "flex items-center gap-3 p-4 rounded-lg text-left transition-colors",
-                    "bg-secondary/50 hover:bg-secondary border border-border/50",
-                    m.id === modeId && "border-primary/50 bg-primary/10"
-                  )}
-                >
-                  <m.icon className={cn("w-5 h-5", m.accentClass)} />
-                  <div>
-                    <p className="font-medium text-foreground">{m.title}</p>
-                    <p className="text-sm text-muted-foreground">{m.description}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border">
+              <DialogHeader>
+                <DialogTitle>Switch thinking mode</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 gap-3 mt-4">
+                {modes.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleSwitchMode(m.id)}
+                    className={cn(
+                      "flex items-center gap-3 p-4 rounded-lg text-left transition-colors",
+                      "bg-secondary/50 hover:bg-secondary border border-border/50",
+                      m.id === modeId && "border-primary/50 bg-primary/10"
+                    )}
+                  >
+                    <m.icon className={cn("w-5 h-5", m.accentClass)} />
+                    <div>
+                      <p className="font-medium text-foreground">{m.title}</p>
+                      <p className="text-sm text-muted-foreground">{m.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        <SessionTimer startTime={sessionStart} isPaused={!isConnected} />
+        {/* Mode badge for larger screens (centered, absolute positioned) */}
+        <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-4">
+          <Dialog open={switchModeOpen} onOpenChange={setSwitchModeOpen}>
+            <DialogTrigger asChild>
+              <button type="button" className="focus:outline-none">
+                <ModeBadge
+                  icon={mode.icon}
+                  title={mode.title}
+                  accentClass={mode.accentClass}
+                  borderClass={mode.borderClass}
+                  clickable
+                />
+              </button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border">
+              <DialogHeader>
+                <DialogTitle>Switch thinking mode</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 gap-3 mt-4">
+                {modes.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleSwitchMode(m.id)}
+                    className={cn(
+                      "flex items-center gap-3 p-4 rounded-lg text-left transition-colors",
+                      "bg-secondary/50 hover:bg-secondary border border-border/50",
+                      m.id === modeId && "border-primary/50 bg-primary/10"
+                    )}
+                  >
+                    <m.icon className={cn("w-5 h-5", m.accentClass)} />
+                    <div>
+                      <p className="font-medium text-foreground">{m.title}</p>
+                      <p className="text-sm text-muted-foreground">{m.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -360,7 +371,7 @@ const VoiceChat = () => {
 
         {/* Transcript */}
         <div className="flex-1 w-full max-w-4xl min-h-0">
-          <Transcript messages={dummyMessages} />
+          <Transcript messages={messages} />
         </div>
       </main>
     </div>

@@ -6,9 +6,11 @@ Production-grade setup with logging, error handling, and structured configuratio
 import logging
 import ssl
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
+from datetime import datetime
+from fastapi import FastAPI, Request, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import aiohttp
 from dotenv import load_dotenv
 
@@ -22,6 +24,8 @@ except ImportError:
 
 from config import get_settings
 from src.prompts import get_instructions_for_mode
+from src.usage_tracker import get_usage_tracker
+from src.storage.mongodb import MongoDBUsageStorage
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +40,44 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+# Initialize MongoDB storage and usage tracker
+storage = MongoDBUsageStorage(
+    mongodb_url=settings.mongodb_url,
+    database_name=settings.mongodb_database,
+)
+usage_tracker = get_usage_tracker(
+    storage=storage,
+    token_limit=settings.token_limit_per_ip,
+    reset_period_hours=settings.token_reset_period_hours,
+)
+
+# API Key authentication
+security = HTTPBearer()
+
+
+async def verify_api_key(
+    authorization: HTTPAuthorizationCredentials = Depends(security),
+) -> bool:
+    """Verify API key from Authorization header."""
+    if not settings.backend_api_key:
+        # If no API key is configured, allow all requests (development mode)
+        return True
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Please provide an Authorization header with Bearer token.",
+        )
+    
+    provided_key = authorization.credentials
+    if provided_key != settings.backend_api_key:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key.",
+        )
+    
+    return True
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,11 +89,12 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down server...")
+    await usage_tracker.close()
 
 
 app = FastAPI(
     title="Wrong by Default API",
-    description="OpenAI Realtime API integration server",
+    description="Voice AI that pushes back on your thinking - OpenAI Realtime API integration server",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -101,13 +144,87 @@ async def health_check():
     return {"status": "healthy", "service": "wrong-by-default-api"}
 
 
+@app.post("/api/usage/report")
+async def report_usage(
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
+    """
+    Report token usage from a conversation checkpoint.
+    Returns whether the session should be ended due to limit exceeded.
+    """
+    try:
+        body = await request.json()
+        tokens = body.get("tokens", 0)
+        client_ip = request.client.host if request.client else "unknown"
+        
+        if tokens <= 0:
+            raise HTTPException(status_code=400, detail="Tokens must be greater than 0")
+        
+        # Check limit before adding tokens
+        allowed_before, usage_before = await usage_tracker.check_limit(client_ip)
+        
+        # Add tokens
+        await usage_tracker.add_tokens(client_ip, tokens)
+        
+        # Check limit after adding tokens
+        usage_after = await usage_tracker.get_usage(client_ip)
+        limit_exceeded = usage_after["tokens_used"] >= usage_after["tokens_limit"]
+        
+        return {
+            "success": True,
+            "usage": usage_after,
+            "limit_exceeded": limit_exceeded,
+            "reset_at": usage_after["reset_at"].isoformat() if limit_exceeded else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reporting usage: {e}")
+        raise HTTPException(status_code=500, detail="Failed to report usage")
+
+
+@app.get("/api/usage")
+async def get_usage(
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
+    """Get current usage for the requesting IP."""
+    client_ip = request.client.host if request.client else "unknown"
+    usage_info = usage_tracker.get_usage(client_ip)
+    return usage_info
+
+
 @app.post("/api/realtime/session")
-async def create_session(request: Request):
+async def create_session(
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
     """Create a Realtime API session using the unified interface."""
     content_type = request.headers.get("content-type", "")
     client_ip = request.client.host if request.client else "unknown"
 
-    logger.info(f"Session creation request from {client_ip}")
+    # Check token usage limit
+    allowed, usage_info = await usage_tracker.check_limit(client_ip)
+    if not allowed:
+        # Convert datetime to ISO string for JSON serialization
+        usage_info_serializable = usage_info.copy()
+        if isinstance(usage_info_serializable.get('reset_at'), datetime):
+            usage_info_serializable['reset_at'] = usage_info_serializable['reset_at'].isoformat()
+        
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Usage limit exceeded",
+                "message": f"Usage limit reached. Resets in 24 hours.",
+                "usage": usage_info_serializable
+            }
+        )
+
+    logger.info(
+        f"Session creation request from {client_ip} "
+        f"(tokens: {usage_info['tokens_used']}/{usage_info['tokens_limit']})"
+    )
 
     # Handle both JSON and text/plain content types
     if "application/json" in content_type:
