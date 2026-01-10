@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # OpenAI configuration
     openai_api_key: Optional[str] = None
     openai_api_base: str = "https://api.openai.com"
-    openai_model: str = "gpt-4o-realtime-preview-2024-12-17"
+    openai_model: str = "gpt-realtime"
     openai_voice: str = "marin"
 
     class Config:

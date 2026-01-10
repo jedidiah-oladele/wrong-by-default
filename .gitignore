@@ -8,10 +8,12 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-.venv
 dist
 dist-ssr
 *.local
+
+.venv
+__pycache__
 
 # Editor directories and files
 .vscode/*
@@ -25,4 +27,4 @@ dist-ssr
 *.sw?
 
 # Environment variables
-.env
+*.env

@@ -4,12 +4,21 @@ Production-grade setup with logging, error handling, and structured configuratio
 """
 
 import logging
+import ssl
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 import aiohttp
 from dotenv import load_dotenv
+
+# Try to use certifi for SSL certificates (better for macOS)
+try:
+    import certifi
+
+    SSL_CERT_PATH = certifi.where()
+except ImportError:
+    SSL_CERT_PATH = None
 
 from config import get_settings
 from src.prompts import get_instructions_for_mode
@@ -65,6 +74,18 @@ def get_session_config(mode_id: str) -> str:
         "type": "realtime",
         "model": settings.openai_model,
         "audio": {
+            "input": {
+                "transcription": {
+                    "model": "whisper-1",
+                    "language": "en",
+                },
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.8,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                },
+            },
             "output": {
                 "voice": settings.openai_voice,
             }
@@ -119,13 +140,23 @@ async def create_session(request: Request):
     session_config = get_session_config(mode_id)
     logger.info(f"Creating session for mode: {mode_id}")
 
-    # Create FormData
-    form_data = aiohttp.FormData()
-    form_data.add_field("sdp", sdp)
-    form_data.add_field("session", session_config)
-
     try:
-        async with aiohttp.ClientSession() as session:
+        # Create SSL context with certificates
+        # Use certifi if available (better for macOS), otherwise use default
+        if SSL_CERT_PATH:
+            ssl_context = ssl.create_default_context(cafile=SSL_CERT_PATH)
+        else:
+            ssl_context = ssl.create_default_context()
+
+        # Create connector with SSL context
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+        # OpenAI Realtime API expects multipart/form-data with sdp and session fields
+        form_data = aiohttp.FormData(default_to_multipart=True)
+        form_data.add_field("sdp", sdp)
+        form_data.add_field("session", session_config)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.post(
                 f"{settings.openai_api_base}/v1/realtime/calls",
                 headers={

@@ -76,10 +76,6 @@ export default {
           "0%": { opacity: "0", transform: "translateY(10px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
-        waveform: {
-          "0%, 100%": { transform: "scaleY(0.3)" },
-          "50%": { transform: "scaleY(1)" },
-        },
         glow: {
           "0%": { boxShadow: "0 0 20px -10px hsl(var(--primary) / 0.5)" },
           "100%": { boxShadow: "0 0 30px -5px hsl(var(--primary) / 0.7)" },
@@ -89,7 +85,6 @@ export default {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.5s ease-out forwards",
-        waveform: "waveform 1.2s ease-in-out infinite",
         glow: "glow 2s ease-in-out infinite alternate",
       },
     },

@@ -18,7 +18,7 @@ const Index = () => {
             Challenge your assumptions
           </h1>
           <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed">
-            AI that pushes back on your thinking
+            Voice AI that pushes back on your thinking
           </p>
         </div>
       </div>
