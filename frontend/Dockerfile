@@ -22,8 +22,14 @@ FROM nginx:alpine
 # Install gettext for envsubst
 RUN apk add --no-cache gettext
 
+# Remove default nginx config
+RUN rm -f /etc/nginx/conf.d/default.conf
+
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Verify build output exists
+RUN ls -la /usr/share/nginx/html || (echo "ERROR: Build output not found" && exit 1)
 
 # Copy nginx configuration template
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
