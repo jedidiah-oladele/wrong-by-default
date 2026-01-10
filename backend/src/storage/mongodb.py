@@ -81,12 +81,13 @@ class MongoDBUsageStorage(UsageStorage):
             last_reset = datetime.fromisoformat(last_reset)
         
         return {
-            "tokens": doc.get("tokens", 0),
+            "last_used_tokens": doc.get("last_used_tokens", 0),
+            "total_tokens": doc.get("total_tokens", 0),
             "last_reset": last_reset or datetime.now(),
         }
 
     async def set_usage(
-        self, client_id: str, tokens: int, last_reset: datetime
+        self, client_id: str, last_used_tokens: int, total_tokens: int, last_reset: datetime
     ) -> None:
         """Set usage data for a client."""
         collection = await self._get_collection()
@@ -94,7 +95,8 @@ class MongoDBUsageStorage(UsageStorage):
             {"_id": client_id},
             {
                 "$set": {
-                    "tokens": tokens,
+                    "last_used_tokens": last_used_tokens,
+                    "total_tokens": total_tokens,
                     "last_reset": last_reset,
                 }
             },
@@ -102,20 +104,44 @@ class MongoDBUsageStorage(UsageStorage):
         )
 
     async def increment_tokens(self, client_id: str, tokens: int) -> None:
-        """Increment token count for a client."""
+        """Increment token counts for a client (both last_used_tokens and total_tokens)."""
+        collection = await self._get_collection()
+        # Check if document exists
+        doc = await collection.find_one({"_id": client_id})
+        
+        if doc is None:
+            # Document doesn't exist - create it with initial values
+            await collection.insert_one({
+                "_id": client_id,
+                "last_used_tokens": tokens,
+                "total_tokens": tokens,
+                "last_reset": datetime.now(),
+            })
+        else:
+            # Document exists - increment both fields
+            await collection.update_one(
+                {"_id": client_id},
+                {
+                    "$inc": {
+                        "last_used_tokens": tokens,
+                        "total_tokens": tokens,
+                    },
+                },
+            )
+
+    async def reset_usage(self, client_id: str) -> None:
+        """Reset usage for a client (only resets last_used_tokens, preserves total_tokens)."""
         collection = await self._get_collection()
         await collection.update_one(
             {"_id": client_id},
             {
-                "$inc": {"tokens": tokens},
-                "$setOnInsert": {"last_reset": datetime.now()},
+                "$set": {
+                    "last_used_tokens": 0,
+                    "last_reset": datetime.now(),
+                }
             },
             upsert=True,
         )
-
-    async def reset_usage(self, client_id: str) -> None:
-        """Reset usage for a client."""
-        await self.set_usage(client_id, 0, datetime.now())
 
     async def close(self) -> None:
         """Close MongoDB connection."""

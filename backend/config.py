@@ -37,7 +37,6 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_api_base: str = "https://api.openai.com"
     openai_model: str = "gpt-realtime"
-    openai_voice: str = "marin"
 
     class Config:
         env_file = ".env"

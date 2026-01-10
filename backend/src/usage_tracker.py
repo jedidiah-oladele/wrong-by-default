@@ -70,19 +70,22 @@ class UsageTracker:
         
         if not usage_data:
             # Initialize with default values
-            tokens_used = 0
+            last_used_tokens = 0
+            total_tokens = 0
             last_reset = datetime.now()
-            await self.storage.set_usage(client_id, 0, last_reset)
+            await self.storage.set_usage(client_id, 0, 0, last_reset)
         else:
-            tokens_used = usage_data.get("tokens", 0)
+            last_used_tokens = usage_data.get("last_used_tokens", 0)
+            total_tokens = usage_data.get("total_tokens", 0)
             last_reset = usage_data.get("last_reset", datetime.now())
             if isinstance(last_reset, str):
                 last_reset = datetime.fromisoformat(last_reset)
         
         return {
-            "tokens_used": tokens_used,
+            "last_used_tokens": last_used_tokens,
+            "total_tokens": total_tokens,
             "tokens_limit": self.token_limit,
-            "tokens_remaining": max(0, self.token_limit - tokens_used),
+            "tokens_remaining": max(0, self.token_limit - last_used_tokens),
             "reset_at": last_reset + self.reset_period
         }
 
@@ -95,14 +98,14 @@ class UsageTracker:
         """
         usage_info = await self.get_usage(ip_address)
         
-        # Use tokens_used from usage_info
-        tokens_used = usage_info["tokens_used"]
-        allowed = tokens_used < self.token_limit
+        # Use last_used_tokens from usage_info
+        last_used_tokens = usage_info["last_used_tokens"]
+        allowed = last_used_tokens < self.token_limit
         
         if not allowed:
             logger.warning(
                 f"Token limit exceeded for {ip_address}: "
-                f"{tokens_used}/{self.token_limit} tokens used"
+                f"{last_used_tokens}/{self.token_limit} tokens used"
             )
         
         return allowed, usage_info
@@ -123,11 +126,13 @@ class UsageTracker:
         await self.storage.increment_tokens(client_id, tokens)
         
         usage_data = await self.storage.get_usage(client_id)
-        tokens_used = usage_data.get("tokens", 0) if usage_data else 0
+        last_used_tokens = usage_data.get("last_used_tokens", 0) if usage_data else 0
+        total_tokens = usage_data.get("total_tokens", 0) if usage_data else 0
         
         logger.info(
             f"Added {tokens} tokens for {ip_address}. "
-            f"Total: {tokens_used}/{self.token_limit}"
+            f"Current period: {last_used_tokens}/{self.token_limit}, "
+            f"Total: {total_tokens}"
         )
 
     async def reset_all(self):

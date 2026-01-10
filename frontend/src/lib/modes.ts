@@ -14,7 +14,7 @@ export const modes: Mode[] = [
   {
     id: "devils-advocate",
     title: "Devil's Advocate",
-    description: "I'll argue the opposite of whatever you believe",
+    description: "I'll oppose every argument you make and force you to defend your thinking",
     icon: Swords,
     accentClass: "text-[hsl(175,70%,42%)]",
     borderClass: "border-[hsl(175,70%,42%)]",

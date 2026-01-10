@@ -23,7 +23,7 @@ except ImportError:
     SSL_CERT_PATH = None
 
 from config import get_settings
-from src.prompts import get_instructions_for_mode
+from src.prompts import get_instructions_for_mode, get_voice_for_mode
 from src.usage_tracker import get_usage_tracker
 from src.storage.mongodb import MongoDBUsageStorage
 
@@ -86,6 +86,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting server...")
     logger.info(f"Server will run on port {settings.port}")
     logger.info(f"Frontend URL: {settings.frontend_url}")
+    
+    # Pre-connect to MongoDB at startup
+    try:
+        await storage._connect()
+        logger.info("MongoDB connection established at startup")
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB at startup: {e}", exc_info=True)
+        raise
+    
     yield
     # Shutdown
     logger.info("Shutting down server...")
@@ -130,7 +139,7 @@ def get_session_config(mode_id: str) -> str:
                 },
             },
             "output": {
-                "voice": settings.openai_voice,
+                "voice": get_voice_for_mode(mode_id),
             }
         },
         "instructions": get_instructions_for_mode(mode_id),
@@ -169,7 +178,7 @@ async def report_usage(
         
         # Check limit after adding tokens
         usage_after = await usage_tracker.get_usage(client_ip)
-        limit_exceeded = usage_after["tokens_used"] >= usage_after["tokens_limit"]
+        limit_exceeded = usage_after["last_used_tokens"] >= usage_after["tokens_limit"]
         
         return {
             "success": True,
@@ -223,7 +232,8 @@ async def create_session(
 
     logger.info(
         f"Session creation request from {client_ip} "
-        f"(tokens: {usage_info['tokens_used']}/{usage_info['tokens_limit']})"
+        f"(current: {usage_info['last_used_tokens']}/{usage_info['tokens_limit']}, "
+        f"total: {usage_info['total_tokens']})"
     )
 
     # Handle both JSON and text/plain content types

@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import ModeCard from "@/components/ModeCard";
+import Footer from "@/components/Footer";
 import { modes } from "@/lib/modes";
 
 const Index = () => {
@@ -44,10 +45,8 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Subtle footer */}
-      <footer className="py-8 text-center text-muted-foreground text-sm">
-        <p>wrongbydefault.com — Think differently</p>
-      </footer>
+      {/* Footer */}
+      <Footer />
     </div>
   );
 };
