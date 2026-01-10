@@ -24,6 +24,8 @@ RUN npm ci
 COPY . .
 
 # Build the application
+# Debug: Print environment variables (remove in production if sensitive)
+RUN echo "Building with VITE_BACKEND_API_BASE_URL=${VITE_BACKEND_API_BASE_URL:-not set}"
 RUN npm run build
 
 # Stage 2: Serve with nginx
