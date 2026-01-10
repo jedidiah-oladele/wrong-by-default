@@ -1,73 +1,108 @@
-# Welcome to your Lovable project
+# Wrong by Default
 
-## Project info
+AI that pushes back on your thinking. Challenge your assumptions with different thinking modes.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Project Structure
 
-## How can I edit this code?
+```
+wrong-by-default/
+├── frontend/          # React + TypeScript + Vite frontend
+├── backend/           # Python + FastAPI backend
+├── README.md          # This file
+└── .env               # Environment variables (create from .env.example)
+```
 
-There are several ways of editing your application.
+## Quick Start
 
-**Use Lovable**
+### Prerequisites
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- **Python 3.8+** (for backend)
+- **Node.js 18+** (for frontend)
+- **OpenAI API key** with access to the Realtime API
 
-Changes made via Lovable will be committed automatically to this repo.
+### Installation
 
-**Use your preferred IDE**
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd wrong-by-default
+   ```
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+2. **Set up the backend**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+3. **Set up the frontend**
+   ```bash
+   cd ../frontend
+   npm install
+   ```
 
-Follow these steps:
+4. **Configure environment variables**
+   
+   Create a `.env` file in the root directory:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Add your OpenAI API key:
+   ```
+   OPENAI_API_KEY=your_openai_api_key_here
+   PORT=3000
+   FRONTEND_URL=http://localhost:8080
+   ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Running the Application
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+You need to run both servers:
 
-# Step 3: Install the necessary dependencies.
-npm i
+**Terminal 1 - Backend:**
+```bash
+cd backend
+python -m uvicorn main:app --host 0.0.0.0 --port 3000 --reload
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Then open `http://localhost:8080` in your browser.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Thinking Modes
 
-**Use GitHub Codespaces**
+The application offers four different AI thinking modes:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. **Devil's Advocate** - Argues against whatever position you take
+2. **First Principles Thinker** - Strips away assumptions and rebuilds from fundamentals
+3. **Edge Case Hunter** - Finds flaws, blind spots, and failure modes
+4. **Second-Order Thinker** - Explores ripple effects and long-term consequences
 
-## What technologies are used for this project?
+## Technology Stack
 
-This project is built with:
-
-- Vite
+### Frontend
+- React 18
 - TypeScript
-- React
-- shadcn-ui
+- Vite
 - Tailwind CSS
+- shadcn/ui
+- WebRTC for real-time audio
 
-## How can I deploy this project?
+### Backend
+- Python 3.8+
+- FastAPI
+- OpenAI Realtime API
+- WebRTC integration
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Development
 
-## Can I connect a custom domain to my Lovable project?
+See individual README files for more details:
+- [Frontend README](frontend/README.md) - Frontend development guide
+- [Backend README](backend/README.md) - Backend development guide
 
-Yes, you can!
+## License
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+[Your License Here]

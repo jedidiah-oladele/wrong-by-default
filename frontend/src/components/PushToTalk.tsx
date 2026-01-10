@@ -4,16 +4,19 @@ import { cn } from "@/lib/utils";
 interface PushToTalkProps {
   isListening: boolean;
   onToggle: () => void;
+  disabled?: boolean;
 }
 
-const PushToTalk = ({ isListening, onToggle }: PushToTalkProps) => {
+const PushToTalk = ({ isListening, onToggle, disabled = false }: PushToTalkProps) => {
   return (
     <button
       onClick={onToggle}
+      disabled={disabled}
       className={cn(
         "relative w-20 h-20 rounded-full transition-all duration-300",
         "flex items-center justify-center",
         "focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background",
+        disabled && "opacity-50 cursor-not-allowed",
         isListening 
           ? "bg-primary text-primary-foreground animate-glow" 
           : "bg-secondary hover:bg-secondary/80 text-foreground border border-border"

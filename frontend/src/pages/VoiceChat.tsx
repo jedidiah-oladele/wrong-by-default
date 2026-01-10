@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ModeBadge from "@/components/ModeBadge";
 import SessionTimer from "@/components/SessionTimer";
@@ -8,7 +8,6 @@ import Waveform from "@/components/Waveform";
 import PushToTalk from "@/components/PushToTalk";
 import Transcript from "@/components/Transcript";
 import { getModeById, modes } from "@/lib/modes";
-import { mockTranscripts } from "@/lib/mockTranscript";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +15,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { useRealtimeConnection } from "@/hooks/useRealtimeConnection";
 
 const VoiceChat = () => {
   const { modeId } = useParams<{ modeId: string }>();
@@ -25,33 +26,101 @@ const VoiceChat = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [sessionStart] = useState(new Date());
   const [switchModeOpen, setSwitchModeOpen] = useState(false);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const mode = getModeById(modeId || "");
 
-  // Simulate AI speaking periodically when not listening
-  useEffect(() => {
-    if (!isListening) {
-      const speakInterval = setInterval(() => {
+  const {
+    isConnected,
+    isConnecting,
+    error,
+    messages,
+    connect,
+    disconnect,
+    sendEvent,
+    mediaStream,
+  } = useRealtimeConnection({
+    modeId: modeId || "",
+    onMessage: (message) => {
+      // Update speaking state when assistant responds
+      if (message.role === "assistant") {
         setIsSpeaking(true);
-        setTimeout(() => setIsSpeaking(false), 2000 + Math.random() * 2000);
-      }, 5000);
+        // Stop speaking after a delay (audio will play automatically)
+        setTimeout(() => setIsSpeaking(false), 3000);
+      }
+    },
+    onError: (err) => {
+      console.error("Realtime connection error:", err);
+    },
+  });
 
-      return () => clearInterval(speakInterval);
-    } else {
-      setIsSpeaking(false);
+  // Store media stream reference
+  useEffect(() => {
+    if (mediaStream) {
+      mediaStreamRef.current = mediaStream;
+    }
+  }, [mediaStream]);
+
+  // Connect when component mounts or mode changes
+  useEffect(() => {
+    if (mode && !isConnected && !isConnecting) {
+      connect();
+    }
+
+    return () => {
+      disconnect();
+    };
+  }, [mode?.id, connect, disconnect, isConnected, isConnecting]);
+
+  // Handle push-to-talk: enable/disable microphone input
+  useEffect(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = isListening;
+      });
     }
   }, [isListening]);
+
+  // Detect when user stops speaking and send the audio
+  const handleToggleListening = () => {
+    if (isListening) {
+      // User stopped speaking - commit the audio buffer and request response
+      if (isConnected) {
+        sendEvent({
+          type: "input_audio_buffer.commit",
+        });
+        sendEvent({
+          type: "response.create",
+        });
+      }
+    }
+    setIsListening(!isListening);
+  };
 
   if (!mode) {
     navigate("/");
     return null;
   }
 
-  const transcript = mockTranscripts[modeId || ""] || [];
-
   const handleSwitchMode = (newModeId: string) => {
     setSwitchModeOpen(false);
+    disconnect();
     navigate(`/chat/${newModeId}`);
+  };
+
+  const handleEndSession = () => {
+    disconnect();
+    navigate("/");
+  };
+
+  // Determine status text
+  const getStatusText = () => {
+    if (isConnecting) return "Connecting...";
+    if (error) return "Connection error";
+    if (isListening) return "Listening...";
+    if (isSpeaking) return "Speaking...";
+    if (isConnected) return "Ready";
+    return "Not connected";
   };
 
   return (
@@ -61,7 +130,7 @@ const VoiceChat = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/")}
+          onClick={handleEndSession}
           className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -80,21 +149,31 @@ const VoiceChat = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-12 gap-12">
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive" className="max-w-md">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Status indicator */}
         <div className="text-center">
-          <p className="text-muted-foreground text-sm">
-            {isListening ? "Listening..." : isSpeaking ? "Speaking..." : "Ready"}
-          </p>
+          <p className="text-muted-foreground text-sm">{getStatusText()}</p>
         </div>
 
         {/* Waveform Visualization */}
-        <Waveform isActive={isListening || isSpeaking} isSpeaking={isSpeaking} />
+        <Waveform
+          isActive={isListening || isSpeaking || isConnecting}
+          isSpeaking={isSpeaking}
+        />
 
         {/* Push to Talk Button */}
         <div className="flex flex-col items-center gap-3">
           <PushToTalk
             isListening={isListening}
-            onToggle={() => setIsListening(!isListening)}
+            onToggle={handleToggleListening}
+            disabled={!isConnected || isConnecting}
           />
           <p className="text-muted-foreground text-sm">
             {isListening ? "Tap to stop" : "Tap to speak"}
@@ -102,7 +181,7 @@ const VoiceChat = () => {
         </div>
 
         {/* Transcript */}
-        <Transcript messages={transcript} />
+        <Transcript messages={messages} />
       </main>
 
       {/* Footer Controls */}
