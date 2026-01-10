@@ -3,7 +3,6 @@ FastAPI server for OpenAI Realtime API integration.
 Production-grade setup with logging, error handling, and structured configuration.
 """
 
-import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -13,7 +12,7 @@ import aiohttp
 from dotenv import load_dotenv
 
 from config import get_settings
-from prompts import get_instructions_for_mode
+from src.prompts import get_instructions_for_mode
 
 # Load environment variables
 load_dotenv()

@@ -3,15 +3,13 @@ Mode-specific system prompts for the AI assistant.
 Each mode has a distinct personality and approach to challenging user thinking.
 """
 
-from typing import Dict
-
-from .devils_advocate import PROMPT as DEVILS_ADVOCATE_PROMPT
-from .first_principles import PROMPT as FIRST_PRINCIPLES_PROMPT
-from .edge_case import PROMPT as EDGE_CASE_PROMPT
-from .second_order import PROMPT as SECOND_ORDER_PROMPT
+from .content.devils_advocate import PROMPT as DEVILS_ADVOCATE_PROMPT
+from .content.first_principles import PROMPT as FIRST_PRINCIPLES_PROMPT
+from .content.edge_case import PROMPT as EDGE_CASE_PROMPT
+from .content.second_order import PROMPT as SECOND_ORDER_PROMPT
 
 # Mode ID to prompt mapping
-_MODE_PROMPTS: Dict[str, str] = {
+_MODE_PROMPTS: dict[str, str] = {
     "devils-advocate": DEVILS_ADVOCATE_PROMPT,
     "first-principles": FIRST_PRINCIPLES_PROMPT,
     "edge-case": EDGE_CASE_PROMPT,
