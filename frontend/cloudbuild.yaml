@@ -1,0 +1,44 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VITE_BACKEND_API_BASE_URL=${_VITE_BACKEND_API_BASE_URL}'
+      - '--build-arg'
+      - 'VITE_BACKEND_API_KEY=${_VITE_BACKEND_API_KEY}'
+      - '--build-arg'
+      - 'ENV=${_ENV}'
+      - '-t'
+      - '${_IMAGE_NAME}'
+      - '.'
+  
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE_NAME}']
+  
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - '${_IMAGE_NAME}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+substitutions:
+  _SERVICE_NAME: wrong-by-default-frontend
+  _REGION: europe-west1
+  _IMAGE_NAME: gcr.io/${PROJECT_ID}/wrong-by-default-frontend:${SHORT_SHA}
+  # Update these with your actual values
+  _VITE_BACKEND_API_BASE_URL: https://wrong-by-default-api-941938611525.europe-west1.run.app
+  _VITE_BACKEND_API_KEY: ''  # Optional: Set your backend API key here or use Secret Manager
+  _ENV: production
+
+options:
+  logging: CLOUD_LOGGING_ONLY
