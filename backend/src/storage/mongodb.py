@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 # Try to use certifi for SSL certificates (better for macOS)
 try:
     import certifi
+
     SSL_CERT_PATH = certifi.where()
 except ImportError:
     SSL_CERT_PATH = None
@@ -22,7 +23,12 @@ logger = logging.getLogger(__name__)
 class MongoDBUsageStorage(UsageStorage):
     """MongoDB implementation of usage storage."""
 
-    def __init__(self, mongodb_url: str, database_name: str, collection_name: str = "usage_tracking"):
+    def __init__(
+        self,
+        mongodb_url: str,
+        database_name: str,
+        collection_name: str = "usage_tracking",
+    ):
         """
         Initialize MongoDB storage.
 
@@ -45,7 +51,7 @@ class MongoDBUsageStorage(UsageStorage):
                 client_kwargs = {}
                 if SSL_CERT_PATH:
                     client_kwargs["tlsCAFile"] = SSL_CERT_PATH
-                
+
                 self.client = AsyncIOMotorClient(self.mongodb_url, **client_kwargs)
                 if self.client is None:
                     raise RuntimeError("Failed to create MongoDB client")
@@ -71,15 +77,15 @@ class MongoDBUsageStorage(UsageStorage):
         """Get usage data for a client."""
         collection = await self._get_collection()
         doc = await collection.find_one({"_id": client_id})
-        
+
         if not doc:
             return None
-        
+
         # Convert last_reset to datetime if it's a string
         last_reset = doc.get("last_reset")
         if isinstance(last_reset, str):
             last_reset = datetime.fromisoformat(last_reset)
-        
+
         return {
             "last_used_tokens": doc.get("last_used_tokens", 0),
             "total_tokens": doc.get("total_tokens", 0),
@@ -87,10 +93,15 @@ class MongoDBUsageStorage(UsageStorage):
         }
 
     async def set_usage(
-        self, client_id: str, last_used_tokens: int, total_tokens: int, last_reset: datetime
+        self,
+        client_id: str,
+        last_used_tokens: int,
+        total_tokens: int,
+        last_reset: datetime,
     ) -> None:
         """Set usage data for a client."""
         collection = await self._get_collection()
+        now = datetime.now()
         await collection.update_one(
             {"_id": client_id},
             {
@@ -98,7 +109,11 @@ class MongoDBUsageStorage(UsageStorage):
                     "last_used_tokens": last_used_tokens,
                     "total_tokens": total_tokens,
                     "last_reset": last_reset,
-                }
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
             },
             upsert=True,
         )
@@ -106,17 +121,22 @@ class MongoDBUsageStorage(UsageStorage):
     async def increment_tokens(self, client_id: str, tokens: int) -> None:
         """Increment token counts for a client (both last_used_tokens and total_tokens)."""
         collection = await self._get_collection()
+        now = datetime.now()
         # Check if document exists
         doc = await collection.find_one({"_id": client_id})
-        
+
         if doc is None:
             # Document doesn't exist - create it with initial values
-            await collection.insert_one({
-                "_id": client_id,
-                "last_used_tokens": tokens,
-                "total_tokens": tokens,
-                "last_reset": datetime.now(),
-            })
+            await collection.insert_one(
+                {
+                    "_id": client_id,
+                    "last_used_tokens": tokens,
+                    "total_tokens": tokens,
+                    "last_reset": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
         else:
             # Document exists - increment both fields
             await collection.update_one(
@@ -126,19 +146,27 @@ class MongoDBUsageStorage(UsageStorage):
                         "last_used_tokens": tokens,
                         "total_tokens": tokens,
                     },
+                    "$set": {
+                        "updated_at": now,
+                    },
                 },
             )
 
     async def reset_usage(self, client_id: str) -> None:
         """Reset usage for a client (only resets last_used_tokens, preserves total_tokens)."""
         collection = await self._get_collection()
+        now = datetime.now()
         await collection.update_one(
             {"_id": client_id},
             {
                 "$set": {
                     "last_used_tokens": 0,
-                    "last_reset": datetime.now(),
-                }
+                    "last_reset": now,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
             },
             upsert=True,
         )
