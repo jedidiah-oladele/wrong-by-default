@@ -22,7 +22,7 @@ export const modes: Mode[] = [
   {
     id: "first-principles",
     title: "First Principles Thinker",
-    description: "Let's strip away assumptions and rebuild from fundamentals",
+    description: "I'll strip away your assumptions and help you rebuild from fundamental truths",
     icon: Layers,
     accentClass: "text-[hsl(180,65%,40%)]",
     borderClass: "border-[hsl(180,65%,40%)]",
