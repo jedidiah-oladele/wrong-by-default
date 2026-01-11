@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useRealtimeConnection } from "@/hooks/useRealtimeConnection";
+import { fetchUsage, formatResetTime } from "@/hooks/useRealtimeConnection/usage";
 
 const VoiceChat = () => {
   const { modeId } = useParams<{ modeId: string }>();
@@ -36,6 +37,25 @@ const VoiceChat = () => {
   const aiAnimationFrameRef = useRef<number | null>(null);
 
   const mode = getModeById(modeId || "");
+  const [usageLimitError, setUsageLimitError] = useState<string | null>(null);
+
+  // Function to update error state from usage data
+  const updateUsageError = useCallback((usage: { limit_exceeded: boolean; reset_at: string }) => {
+    if (usage.limit_exceeded) {
+      const resetTime = formatResetTime(usage.reset_at);
+      setUsageLimitError(`Usage limit reached. Please try again ${resetTime}.`);
+    } else {
+      setUsageLimitError(null);
+    }
+  }, []);
+
+  // Function to check usage and update error state
+  const checkUsageLimit = useCallback(async (forceRefresh: boolean = false) => {
+    const usage = await fetchUsage(forceRefresh);
+    if (usage) {
+      updateUsageError(usage);
+    }
+  }, [updateUsageError]);
 
   const {
     isConnected,
@@ -53,6 +73,10 @@ const VoiceChat = () => {
     },
     onError: (err) => {
       console.error("Realtime connection error:", err);
+    },
+    onUsageUpdate: (updatedUsage) => {
+      // Update error state with the usage data we received from reportTokenUsage
+      updateUsageError(updatedUsage);
     },
   });
 
@@ -204,9 +228,18 @@ const VoiceChat = () => {
     };
   }, [isConnected, audioElement]);
 
+  // Fetch usage on page load and when navigating between pages
+  useEffect(() => {
+    checkUsageLimit();
+  }, [modeId, checkUsageLimit]); // Re-fetch when modeId changes (navigation)
 
   // Handle button click: connect or disconnect
   const handleButtonClick = () => {
+    // Prevent connection if usage limit is exceeded
+    if (usageLimitError && !isConnected) {
+      return;
+    }
+
     // If not connected, connect
     if (!isConnected && !isConnecting) {
       connect();
@@ -214,10 +247,10 @@ const VoiceChat = () => {
     }
 
     // If connected, disconnect (end session)
-      if (isConnected) {
+    if (isConnected) {
       disconnect();
       return;
-      }
+    }
   };
 
   if (!mode) {
@@ -239,6 +272,7 @@ const VoiceChat = () => {
   // Determine status text below mic button
   const getStatusText = () => {
     if (isConnecting) return "Connecting...";
+    if (usageLimitError) return usageLimitError;
     if (error) return error;
     if (isConnected) return "Connected, tap to end";
     return "Tap to speak";
@@ -246,7 +280,7 @@ const VoiceChat = () => {
 
   // Determine text color based on state
   const getStatusTextColor = () => {
-    if (error) return "text-destructive";
+    if (usageLimitError || error) return "text-destructive";
     if (isConnected) return "text-green-500";
     return "text-muted-foreground";
   };
@@ -256,7 +290,7 @@ const VoiceChat = () => {
       {/* Header */}
       <header className="relative flex flex-col gap-3 px-6 py-4 border-b border-border/50 flex-shrink-0 md:flex-row md:items-center md:justify-between">
         {/* Top row: End session and Timer */}
-        <div className="flex items-center justify-between w-full">
+        <div className="flex items-center justify-between w-full gap-4">
           <Button
             variant="ghost"
             size="sm"
@@ -361,7 +395,7 @@ const VoiceChat = () => {
             onToggle={handleButtonClick}
             isConnected={isConnected}
             error={error}
-            disabled={isConnecting}
+            disabled={isConnecting || !!usageLimitError}
             isAudioActive={isUserSpeaking || isSpeaking}
           />
           <p className={cn("text-sm transition-colors", getStatusTextColor())}>

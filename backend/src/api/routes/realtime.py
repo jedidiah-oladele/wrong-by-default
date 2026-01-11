@@ -1,0 +1,281 @@
+"""Realtime API session routes."""
+
+import logging
+import ssl
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Request, HTTPException, Depends, Response
+import aiohttp
+from src.api.models import UsageInfo, UsageLimitErrorDetail
+from src.api.dependencies import get_client_ip, verify_api_key
+from src.api import shared
+from src.prompts import get_instructions_for_mode, get_voice_for_mode
+from config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+# Try to use certifi for SSL certificates (better for macOS)
+try:
+    import certifi
+
+    SSL_CERT_PATH = certifi.where()
+except ImportError:
+    SSL_CERT_PATH = None
+
+router = APIRouter()
+
+
+def get_session_config(mode_id: str) -> str:
+    """
+    Generate OpenAI Realtime API session configuration for a given thinking mode.
+
+    Creates a JSON configuration string that specifies:
+    - Model type (realtime)
+    - Audio input settings (transcription model, turn detection)
+    - Audio output settings (voice selection based on mode)
+    - System instructions (prompt based on mode)
+
+    Args:
+        mode_id: Identifier for the thinking mode (e.g., "devils-advocate",
+            "first-principles", "edge-case", "second-order").
+
+    Returns:
+        str: JSON string containing the session configuration.
+
+    Raises:
+        ValueError: If mode_id is invalid or not found.
+    """
+    import json
+
+    base_config = {
+        "type": "realtime",
+        "model": settings.openai_model,
+        "audio": {
+            "input": {
+                "transcription": {
+                    "model": "whisper-1",
+                    "language": "en",
+                },
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.8,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                },
+            },
+            "output": {
+                "voice": get_voice_for_mode(mode_id),
+            },
+        },
+        "instructions": get_instructions_for_mode(mode_id),
+    }
+    return json.dumps(base_config)
+
+
+@router.post("/api/realtime/session")
+async def create_session(
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
+    """
+    Create a new OpenAI Realtime API WebRTC session.
+
+    This endpoint establishes a WebRTC connection to OpenAI's Realtime API for voice-to-voice conversations. It handles:
+    - Usage limit checking before session creation
+    - SDP (Session Description Protocol) offer/answer exchange
+    - Mode-specific configuration (voice, prompts)
+    - Error handling and limit exceeded responses
+
+    The endpoint accepts requests in two formats:
+    1. JSON: `{"sdp": "...", "modeId": "devils-advocate"}`
+    2. Plain text: SDP as body, modeId as query parameter
+
+    Before creating the session, the endpoint checks if the client has exceeded
+    their token usage limit. If exceeded, returns a 429 error with usage details.
+
+    Args:
+        request: FastAPI Request object containing:
+            - Body: SDP offer string (JSON or plain text)
+            - Headers: Content-Type (application/json or text/plain)
+            - Query params: modeId (optional, for text/plain requests)
+        _: API key verification dependency (automatically handled).
+
+    Returns:
+        Response: SDP answer from OpenAI with content-type "application/sdp".
+
+    Raises:
+        HTTPException: 429 if usage limit exceeded. Response includes:
+            - error: "Usage limit exceeded"
+            - message: Human-readable message
+            - usage: Current usage information
+        HTTPException: 400 if SDP data is missing or invalid JSON.
+        HTTPException: 500 if:
+            - Usage tracker is not initialized
+            - OpenAI API key is not configured
+            - Network error occurs
+            - OpenAI API returns an error
+
+    Example JSON Request:
+        ```json
+        {
+            "sdp": "v=0\r\no=- 1234567890 1234567890 IN IP4...",
+            "modeId": "devils-advocate"
+        }
+        ```
+
+    Example Response (Success):
+        Content-Type: application/sdp
+        Body: SDP answer string from OpenAI
+
+    Example Error Response (429):
+        ```json
+        {
+            "detail": {
+                "error": "Usage limit exceeded",
+                "message": "Usage limit reached. Resets in 24 hours.",
+                "usage": {
+                    "last_used_tokens": 100000,
+                    "total_tokens": 150000,
+                    "tokens_limit": 100000,
+                    "tokens_remaining": 0,
+                    "reset_at": "2026-01-12T09:34:28.123456",
+                    "limit_exceeded": true
+                }
+            }
+        }
+        ```
+    """
+    if shared.usage_tracker is None:
+        raise HTTPException(status_code=500, detail="Usage tracker not initialized")
+
+    content_type = request.headers.get("content-type", "")
+    client_ip = get_client_ip(request)
+
+    # Check token usage limit
+    allowed, usage_info = await shared.usage_tracker.check_limit(client_ip)
+    if not allowed:
+        # Convert datetime to ISO string for JSON serialization
+        reset_at_str = usage_info.get("reset_at")
+        if isinstance(reset_at_str, datetime):
+            reset_at_str = reset_at_str.isoformat()
+        elif reset_at_str is None:
+            # Fallback to current time + 24 hours if reset_at is None
+            reset_at_str = (datetime.now() + timedelta(hours=24)).isoformat()
+        elif not isinstance(reset_at_str, str):
+            reset_at_str = str(reset_at_str)
+
+        # Calculate if limit is exceeded
+        limit_exceeded = usage_info["last_used_tokens"] >= usage_info["tokens_limit"]
+
+        usage_info_model = UsageInfo(
+            last_used_tokens=usage_info["last_used_tokens"],
+            total_tokens=usage_info["total_tokens"],
+            tokens_limit=usage_info["tokens_limit"],
+            tokens_remaining=usage_info["tokens_remaining"],
+            reset_at=reset_at_str,
+            limit_exceeded=limit_exceeded,
+        )
+
+        error_detail = UsageLimitErrorDetail(
+            error="Usage limit exceeded",
+            message="Usage limit reached. Resets in 24 hours.",
+            usage=usage_info_model,
+        )
+
+        raise HTTPException(status_code=429, detail=error_detail.model_dump())
+
+    logger.info(
+        f"Session creation request from {client_ip} "
+        f"(current: {usage_info['last_used_tokens']}/{usage_info['tokens_limit']}, "
+        f"total: {usage_info['total_tokens']})"
+    )
+
+    # Handle both JSON and text/plain content types
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            sdp = body.get("sdp")
+            mode_id = body.get("modeId", "devils-advocate")
+            logger.debug(f"Received JSON request with mode: {mode_id}")
+        except Exception as e:
+            logger.error(f"Invalid JSON in request: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+    else:
+        # Plain text SDP
+        sdp = await request.body()
+        sdp = sdp.decode("utf-8")
+        # Try to get modeId from query params
+        mode_id = request.query_params.get("modeId", "devils-advocate")
+        logger.debug(f"Received text/plain request with mode: {mode_id}")
+
+    if not sdp or not isinstance(sdp, str):
+        logger.warning("SDP data missing or invalid in request")
+        raise HTTPException(status_code=400, detail="SDP data is required")
+
+    if not settings.openai_api_key:
+        logger.error("OpenAI API key not configured")
+        raise HTTPException(
+            status_code=500, detail="Server configuration error: OpenAI API key not set"
+        )
+
+    session_config = get_session_config(mode_id)
+    logger.info(f"Creating session for mode: {mode_id}")
+
+    try:
+        # Create SSL context with certificates
+        # Use certifi if available (better for macOS), otherwise use default
+        if SSL_CERT_PATH:
+            ssl_context = ssl.create_default_context(cafile=SSL_CERT_PATH)
+        else:
+            ssl_context = ssl.create_default_context()
+
+        # Create connector with SSL context
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+        # OpenAI Realtime API expects multipart/form-data with sdp and session fields
+        form_data = aiohttp.FormData(default_to_multipart=True)
+        form_data.add_field("sdp", sdp)
+        form_data.add_field("session", session_config)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.post(
+                f"{settings.openai_api_base}/v1/realtime/calls",
+                headers={
+                    "Authorization": f"Bearer {settings.openai_api_key}",
+                },
+                data=form_data,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                if not response.ok:
+                    error_text = await response.text()
+                    logger.error(
+                        f"OpenAI API error: {response.status} - {error_text[:200]}"
+                    )
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail={
+                            "error": "Failed to create session",
+                            "details": error_text,
+                        },
+                    )
+
+                # Send back the SDP we received from the OpenAI REST API
+                answer_sdp = await response.text()
+                logger.info(f"Successfully created session for mode: {mode_id}")
+                return Response(content=answer_sdp, media_type="application/sdp")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Network error during session creation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Failed to create session", "details": str(e)},
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during session creation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "details": "An unexpected error occurred",
+            },
+        )

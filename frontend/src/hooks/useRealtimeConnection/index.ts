@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { TranscriptMessage } from "@/lib/mockTranscript";
 import { createWebRTCConnection, establishConnection, cleanupWebRTC } from "./webrtc";
 import { createEventHandlers } from "./eventHandlers";
+import { formatResetTime } from "./usage";
 
 interface RealtimeConnectionState {
   isConnected: boolean;
@@ -18,12 +19,14 @@ interface UseRealtimeConnectionOptions {
   modeId: string;
   onMessage?: (message: TranscriptMessage) => void;
   onError?: (error: Error) => void;
+  onUsageUpdate?: (usage: { last_used_tokens: number; total_tokens: number; tokens_limit: number; tokens_remaining: number; reset_at: string; limit_exceeded: boolean }) => void;
 }
 
 export const useRealtimeConnection = ({
   modeId,
   onMessage,
   onError,
+  onUsageUpdate,
 }: UseRealtimeConnectionOptions) => {
   const [state, setState] = useState<RealtimeConnectionState>({
     isConnected: false,
@@ -68,10 +71,11 @@ export const useRealtimeConnection = ({
     }));
   }, []);
 
-  const handleLimitExceeded = useCallback(() => {
+  const handleLimitExceeded = useCallback((resetAt: string) => {
+    const resetTime = formatResetTime(resetAt);
     setState((prev) => ({
       ...prev,
-      error: `Usage limit reached. Resets in 24 hours.`,
+      error: `Usage limit reached. Please try again ${resetTime}.`,
     }));
     disconnect();
   }, [disconnect]);
@@ -111,6 +115,7 @@ export const useRealtimeConnection = ({
         setState,
         onMessage,
         onLimitExceeded: handleLimitExceeded,
+        onUsageUpdate,
         currentAssistantMessageIdRef,
         pendingUserMessagesRef,
       });
@@ -206,7 +211,7 @@ export const useRealtimeConnection = ({
       
       onError?.(error instanceof Error ? error : new Error(errorMessage));
     }
-  }, [modeId, onError, addMessage, onMessage, handleLimitExceeded, disconnect]);
+  }, [modeId, onError, addMessage, onMessage, handleLimitExceeded, onUsageUpdate, disconnect]);
 
   const sendEvent = useCallback(
     (event: Record<string, unknown>) => {

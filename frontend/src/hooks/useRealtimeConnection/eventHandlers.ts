@@ -3,13 +3,14 @@
  */
 
 import { TranscriptMessage } from "@/lib/mockTranscript";
-import { reportTokenUsage } from "./tokenUsage";
+import { reportTokenUsage } from "./usage";
 
 interface EventHandlers {
   addMessage: (message: TranscriptMessage) => void;
   setState: React.Dispatch<React.SetStateAction<any>>;
   onMessage?: (message: TranscriptMessage) => void;
-  onLimitExceeded: () => void;
+  onLimitExceeded: (resetAt: string) => void;
+  onUsageUpdate?: (usage: { last_used_tokens: number; total_tokens: number; tokens_limit: number; tokens_remaining: number; reset_at: string; limit_exceeded: boolean }) => void;
   currentAssistantMessageIdRef: React.MutableRefObject<string | null>;
   pendingUserMessagesRef: React.MutableRefObject<Map<string, { itemId: string; timestamp: number }>>;
 }
@@ -20,6 +21,7 @@ export function createEventHandlers(handlers: EventHandlers) {
     setState,
     onMessage,
     onLimitExceeded,
+    onUsageUpdate,
     currentAssistantMessageIdRef,
     pendingUserMessagesRef,
   } = handlers;
@@ -195,7 +197,11 @@ export function createEventHandlers(handlers: EventHandlers) {
       
       // Report token usage to backend at checkpoint (when AI finishes responding)
       if (response.response?.usage?.total_tokens) {
-        reportTokenUsage(response.response.usage.total_tokens, onLimitExceeded);
+        reportTokenUsage(response.response.usage.total_tokens, onLimitExceeded).then((updatedUsage) => {
+          if (updatedUsage && onUsageUpdate) {
+            onUsageUpdate(updatedUsage);
+          }
+        });
       }
       
       currentAssistantMessageIdRef.current = null;
